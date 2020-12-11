@@ -248,7 +248,7 @@ class Trainer:
         else: # default
             # Otherwise, we only feed the image with frame_id 0 through the depth encoder
             # inputs["color_aug", 0, 0]: [12, 3, 192, 640] (B, C, H, W) --> [12, 1, 3, 192, 640]
-            features, hidden = self.models["encoder"](inputs["color_aug", 0, 0].unsqueeze(1))
+            features = self.models["encoder"](inputs["color_aug", 0, 0].unsqueeze(1))
             outputs = self.models["depth"](features)
 
         if self.opt.predictive_mask:

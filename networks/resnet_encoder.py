@@ -87,6 +87,7 @@ class ResnetEncoder(nn.Module):
 
         # For Resnet18
         self.convlstm4 = CGRU_cell(shape=(6,20), input_channels=512, filter_size=3, num_features=512)
+        self.hidden_state= torch.autograd.Variable(torch.zeros(1, 512, 6, 20), requires_grad=True).cuda()
 
     def forward(self, input_image):
         self.features = []
@@ -101,7 +102,7 @@ class ResnetEncoder(nn.Module):
         self.features.append(self.encoder.layer3(self.features[-1]))
         x = self.encoder.layer4(self.features[-1])
         x = torch.reshape(x, (seq_number, batch_size, x.size(1), x.size(2), x.size(3)))
-        output, hidden = self.convlstm4(x, hidden_state=None, seq_len=seq_number)
+        output, hidden = self.convlstm4(x, hidden_state=self.hidden_state, seq_len=seq_number)
         self.features.append(output.squeeze())
 
-        return self.features, hidden
+        return self.features
