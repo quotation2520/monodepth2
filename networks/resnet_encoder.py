@@ -12,6 +12,7 @@ import torch
 import torch.nn as nn
 import torchvision.models as models
 import torch.utils.model_zoo as model_zoo
+from networks.ConvRNN import CGRU_cell
 
 
 class ResNetMultiImageInput(models.ResNet):
@@ -84,15 +85,23 @@ class ResnetEncoder(nn.Module):
         if num_layers > 34:
             self.num_ch_enc[1:] *= 4
 
+        # For Resnet18
+        self.convlstm4 = CGRU_cell(shape=(6,20), input_channels=512, filter_size=3, num_features=512)
+
     def forward(self, input_image):
         self.features = []
         x = (input_image - 0.45) / 0.225
+        seq_number, batch_size, input_channel, height, width = x.shape
+        x = torch.reshape(x, (-1, input_channel, height, width))
         x = self.encoder.conv1(x)
         x = self.encoder.bn1(x)
         self.features.append(self.encoder.relu(x))
         self.features.append(self.encoder.layer1(self.encoder.maxpool(self.features[-1])))
         self.features.append(self.encoder.layer2(self.features[-1]))
         self.features.append(self.encoder.layer3(self.features[-1]))
-        self.features.append(self.encoder.layer4(self.features[-1]))
+        x = self.encoder.layer4(self.features[-1])
+        x = torch.reshape(x, (seq_number, batch_size, x.size(1), x.size(2), x.size(3)))
+        output, hidden = self.convlstm4(x, hidden_state=None, seq_len=seq_number)
+        self.features.append(output.squeeze())
 
-        return self.features
+        return self.features, hidden

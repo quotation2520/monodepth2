@@ -20,7 +20,7 @@ class MonodepthOptions:
         self.parser.add_argument("--data_path",
                                  type=str,
                                  help="path to the training data",
-                                 default=os.path.join(file_dir, "kitti_data"))
+                                 default='/mnt/server3_hard0/dongki/Kitti_Raw')
         self.parser.add_argument("--log_dir",
                                  type=str,
                                  help="log directory",
@@ -47,7 +47,7 @@ class MonodepthOptions:
                                  default="kitti",
                                  choices=["kitti", "kitti_odom", "kitti_depth", "kitti_test"])
         self.parser.add_argument("--png",
-                                 help="if set, trains from raw KITTI png files (instead of jpgs)",
+                                 help="if set, trains from raw KITTI png files (instead of jpgs)", default="True",
                                  action="store_true")
         self.parser.add_argument("--height",
                                  type=int,
@@ -95,7 +95,7 @@ class MonodepthOptions:
         self.parser.add_argument("--num_epochs",
                                  type=int,
                                  help="number of epochs",
-                                 default=20)
+                                 default=10)
         self.parser.add_argument("--scheduler_step_size",
                                  type=int,
                                  help="step size of the scheduler",
