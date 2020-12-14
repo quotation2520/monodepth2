@@ -51,6 +51,8 @@ class Trainer:
         if self.opt.use_stereo:
             self.opt.frame_ids.append("s")
 
+        ## MODEL ##
+
         self.models["encoder"] = networks.ResnetEncoder(
             self.opt.num_layers, self.opt.weights_init == "pretrained")
         self.models["encoder"].to(self.device)
@@ -62,7 +64,7 @@ class Trainer:
         self.parameters_to_train += list(self.models["depth"].parameters())
 
         if self.use_pose_net:
-            if self.opt.pose_model_type == "separate_resnet":
+            if self.opt.pose_model_type == "separate_resnet":   # Default
                 self.models["pose_encoder"] = networks.ResnetEncoder(
                     self.opt.num_layers,
                     self.opt.weights_init == "pretrained",
@@ -110,7 +112,7 @@ class Trainer:
         print("Models and tensorboard events files are saved to:\n  ", self.opt.log_dir)
         print("Training is using:\n  ", self.device)
 
-        # data
+        ## data ##
         datasets_dict = {"kitti": datasets.KITTIRAWDataset,
                          "kitti_odom": datasets.KITTIOdomDataset}
         self.dataset = datasets_dict[self.opt.dataset]
@@ -243,9 +245,10 @@ class Trainer:
                 features[k] = [f[i] for f in all_features]
 
             outputs = self.models["depth"](features[0])
-        else:
+        else: # default
             # Otherwise, we only feed the image with frame_id 0 through the depth encoder
-            features = self.models["encoder"](inputs["color_aug", 0, 0])
+            # inputs["color_aug", 0, 0]: [12, 3, 192, 640] (B, C, H, W) --> [12, 1, 3, 192, 640]
+            features = self.models["encoder"](inputs["color_aug", 0, 0].unsqueeze(1))
             outputs = self.models["depth"](features)
 
         if self.opt.predictive_mask:
@@ -282,7 +285,7 @@ class Trainer:
                         pose_inputs = [pose_feats[0], pose_feats[f_i]]
 
                     if self.opt.pose_model_type == "separate_resnet":
-                        pose_inputs = [self.models["pose_encoder"](torch.cat(pose_inputs, 1))]
+                        pose_inputs = [self.models["pose_encoder"](torch.cat(pose_inputs, 1).unsqueeze(1))]
                     elif self.opt.pose_model_type == "posecnn":
                         pose_inputs = torch.cat(pose_inputs, 1)
 

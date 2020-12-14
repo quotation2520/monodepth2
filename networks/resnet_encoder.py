@@ -12,12 +12,8 @@ import torch
 import torch.nn as nn
 import torchvision.models as models
 import torch.utils.model_zoo as model_zoo
-<<<<<<< Updated upstream
-=======
 from networks.ConvRNN import CGRU_cell
 from networks.convlstm import ConvLSTM
->>>>>>> Stashed changes
-
 
 class ResNetMultiImageInput(models.ResNet):
     """Constructs a resnet model with varying number of input images.
@@ -88,21 +84,6 @@ class ResnetEncoder(nn.Module):
 
         if num_layers > 34:
             self.num_ch_enc[1:] *= 4
-
-<<<<<<< Updated upstream
-    def forward(self, input_image):
-        self.features = []
-        x = (input_image - 0.45) / 0.225
-        x = self.encoder.conv1(x)
-        x = self.encoder.bn1(x)
-        self.features.append(self.encoder.relu(x))
-        self.features.append(self.encoder.layer1(self.encoder.maxpool(self.features[-1])))
-        self.features.append(self.encoder.layer2(self.features[-1]))
-        self.features.append(self.encoder.layer3(self.features[-1]))
-        self.features.append(self.encoder.layer4(self.features[-1]))
-
-        return self.features
-=======
         # For Resnet18
         #self.convlstm4 = CGRU_cell(shape=(6,20), input_channels=512, filter_size=3, num_features=512)
         self.convlstm1 = ConvLSTM(64,64, (3,3), 1, True, True,  return_all_layers=False).to('cuda')
@@ -181,4 +162,3 @@ class ResnetEncoder(nn.Module):
         #print(seq_number)
         #output, hidden = self.convlstm4(x, hidden_state=self.hidden_state, seq_len=seq_number) 
         return self.features,last_state_list
->>>>>>> Stashed changes
