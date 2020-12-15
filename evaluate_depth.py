@@ -82,7 +82,7 @@ def evaluate(opt):
 
         dataset = datasets.KITTIRAWDataset(opt.data_path, filenames,
                                            encoder_dict['height'], encoder_dict['width'],
-                                           [0], 4, is_train=False)
+                                           [0], 4, is_train=False, img_ext='.png')
         dataloader = DataLoader(dataset, 16, shuffle=False, num_workers=opt.num_workers,
                                 pin_memory=True, drop_last=False)
 
@@ -93,9 +93,9 @@ def evaluate(opt):
         encoder.load_state_dict({k: v for k, v in encoder_dict.items() if k in model_dict})
         depth_decoder.load_state_dict(torch.load(decoder_path))
 
-        encoder.cuda()
+        encoder.cuda(7)
         encoder.eval()
-        depth_decoder.cuda()
+        depth_decoder.cuda(7)
         depth_decoder.eval()
 
         pred_disps = []
@@ -105,13 +105,13 @@ def evaluate(opt):
 
         with torch.no_grad():
             for data in dataloader:
-                input_color = data[("color", 0, 0)].cuda()
+                input_color = data[("color", 0, 0)].cuda(7)
 
                 if opt.post_process:
                     # Post-processed results require each image to have two forward passes
                     input_color = torch.cat((input_color, torch.flip(input_color, [3])), 0)
 
-                output = depth_decoder(encoder(input_color))
+                output = depth_decoder(encoder(input_color.unsqueeze(1)))
 
                 pred_disp, _ = disp_to_depth(output[("disp", 0)], opt.min_depth, opt.max_depth)
                 pred_disp = pred_disp.cpu()[:, 0].numpy()
@@ -163,7 +163,7 @@ def evaluate(opt):
         quit()
 
     gt_path = os.path.join(splits_dir, opt.eval_split, "gt_depths.npz")
-    gt_depths = np.load(gt_path, fix_imports=True, encoding='latin1')["data"]
+    gt_depths = np.load(gt_path, fix_imports=True, encoding='latin1', allow_pickle=True)["data"]
 
     print("-> Evaluating")
 

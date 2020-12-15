@@ -117,7 +117,7 @@ class Trainer:
                          "kitti_odom": datasets.KITTIOdomDataset}
         self.dataset = datasets_dict[self.opt.dataset]
 
-        fpath = os.path.join(os.path.dirname(__file__), "splits", self.opt.split, "{}_files.txt")
+        fpath = os.path.join(os.path.dirname(__file__), "splits", self.opt.split, "{}_files_seq.txt")
 
         train_filenames = readlines(fpath.format("train"))
         val_filenames = readlines(fpath.format("val"))
@@ -202,32 +202,33 @@ class Trainer:
 
         for batch_idx, inputs in enumerate(self.train_loader):
 
+            hs1 = None      # hidden state for encoder
+            hs2 = None      # hidden state for pose_encoder
+
             before_op_time = time.time()
+            for idx in range(30):
+                inputs_i = self.train_loader.dataset.get_frame_i(inputs, idx)
+                outputs, losses, hs1, hs2 = self.process_batch(inputs_i, hs1, hs2)
 
-            outputs, losses = self.process_batch(inputs)
-
-            self.model_optimizer.zero_grad()
-            losses["loss"].backward()
-            self.model_optimizer.step()
+                self.model_optimizer.zero_grad()
+                losses["loss"].backward()
+                self.model_optimizer.step()
+                self.step += 1
 
             duration = time.time() - before_op_time
 
             # log less frequently after the first 2000 steps to save time & disk space
             early_phase = batch_idx % self.opt.log_frequency == 0 and self.step < 2000
             late_phase = self.step % 2000 == 0
-
             if early_phase or late_phase:
                 self.log_time(batch_idx, duration, losses["loss"].cpu().data)
-
                 if "depth_gt" in inputs:
                     self.compute_depth_losses(inputs, outputs, losses)
+                self.log("train", inputs_i, outputs, losses)
+ #                  self.val()
 
-                self.log("train", inputs, outputs, losses)
-                self.val()
 
-            self.step += 1
-
-    def process_batch(self, inputs):
+    def process_batch(self, inputs, hs1, hs2):
         """Pass a minibatch through the network and generate images and losses
         """
         for key, ipt in inputs.items():
@@ -248,21 +249,22 @@ class Trainer:
         else: # default
             # Otherwise, we only feed the image with frame_id 0 through the depth encoder
             # inputs["color_aug", 0, 0]: [12, 3, 192, 640] (B, C, H, W) --> [12, 1, 3, 192, 640]
-            features = self.models["encoder"](inputs["color_aug", 0, 0].unsqueeze(1))
+            features, hs1 = self.models["encoder"](inputs["color_aug", 0, 0].unsqueeze(1), hs1)
             outputs = self.models["depth"](features)
 
         if self.opt.predictive_mask:
             outputs["predictive_mask"] = self.models["predictive_mask"](features)
 
         if self.use_pose_net:
-            outputs.update(self.predict_poses(inputs, features))
+            pose_output, hs2 = self.predict_poses(inputs, features, hs2)
+            outputs.update(pose_output)
 
         self.generate_images_pred(inputs, outputs)
         losses = self.compute_losses(inputs, outputs)
 
-        return outputs, losses
+        return outputs, losses, hs1, hs2
 
-    def predict_poses(self, inputs, features):
+    def predict_poses(self, inputs, features, hs2):
         """Predict poses between input frames for monocular sequences.
         """
         outputs = {}
@@ -285,7 +287,8 @@ class Trainer:
                         pose_inputs = [pose_feats[0], pose_feats[f_i]]
 
                     if self.opt.pose_model_type == "separate_resnet":
-                        pose_inputs = [self.models["pose_encoder"](torch.cat(pose_inputs, 1).unsqueeze(1))]
+                        pose_inputs, hs2 = self.models["pose_encoder"](torch.cat(pose_inputs, 1).unsqueeze(1), hs2)
+                        pose_inputs = [pose_inputs]
                     elif self.opt.pose_model_type == "posecnn":
                         pose_inputs = torch.cat(pose_inputs, 1)
 
@@ -304,7 +307,7 @@ class Trainer:
                     [inputs[("color_aug", i, 0)] for i in self.opt.frame_ids if i != "s"], 1)
 
                 if self.opt.pose_model_type == "separate_resnet":
-                    pose_inputs = [self.models["pose_encoder"](pose_inputs)]
+                    pose_inputs, hs2 = [self.models["pose_encoder"](pose_inputs)]
 
             elif self.opt.pose_model_type == "shared":
                 pose_inputs = [features[i] for i in self.opt.frame_ids if i != "s"]
@@ -318,7 +321,7 @@ class Trainer:
                     outputs[("cam_T_cam", 0, f_i)] = transformation_from_parameters(
                         axisangle[:, i], translation[:, i])
 
-        return outputs
+        return outputs, hs2
 
     def val(self):
         """Validate the model on a single minibatch
