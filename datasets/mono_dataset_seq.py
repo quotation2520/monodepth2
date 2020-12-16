@@ -135,68 +135,45 @@ class MonoDataset(data.Dataset):
             2       images resized to (self.width // 4, self.height // 4)
             3       images resized to (self.width // 8, self.height // 8)
         """
-
-
-        return self.filenames[index]
-
-    def get_frame_i(self, lines, idx):
-
         do_color_aug = self.is_train and random.random() > 0.5
         do_flip = self.is_train and random.random() > 0.5
+        
+        line = self.filenames[index].split()
+        folder = line[0]
+        side = line[1]
 
-        n_batch = len(lines)
-        inputs = {}
-        for batch_i in range(n_batch):
-            line = lines[batch_i].split()
-            folder = line[0]
+        inputs={}
 
-            side = line[1]
-
-            frame_index = int(line[2+idx])
-
-            inputs_i = {}
-
-            for i in self.frame_idxs:
-                if i == "s":
-                    other_side = {"r": "l", "l": "r"}[side]
-                    inputs_i[("color", i, -1)] = self.get_color(folder, frame_index, other_side, do_flip)
-                else:
-                    inputs_i[("color", i, -1)] = self.get_color(folder, frame_index + i, side, do_flip)
-
-            # adjusting intrinsics to match each scale in the pyramid
-            for scale in range(self.num_scales):
-                K = self.K.copy()
-                K[0, :] *= self.width // (2 ** scale)
-                K[1, :] *= self.height // (2 ** scale)
-                inv_K = np.linalg.pinv(K)
-                inputs_i[("K", scale)] = torch.from_numpy(K)
-                inputs_i[("inv_K", scale)] = torch.from_numpy(inv_K)
-            if do_color_aug:
-                color_aug = transforms.ColorJitter.get_params(
-                    self.brightness, self.contrast, self.saturation, self.hue)
-            else:
-                color_aug = (lambda x: x)
-            self.preprocess(inputs_i, color_aug)
-            for i in self.frame_idxs:
-                del inputs_i[("color", i, -1)]
-                del inputs_i[("color_aug", i, -1)]
-            if self.load_depth:
-                depth_gt = self.get_depth(folder, frame_index, side, do_flip)
-                inputs_i["depth_gt"] = np.expand_dims(depth_gt, 0)
-                inputs_i["depth_gt"] = torch.from_numpy(inputs_i["depth_gt"].astype(np.float32))
-            if "s" in self.frame_idxs:
-                stereo_T = np.eye(4, dtype=np.float32)
-                baseline_sign = -1 if do_flip else 1
-                side_sign = -1 if side == "l" else 1
-                stereo_T[0, 3] = side_sign * baseline_sign * 0.1
-                inputs_i["stereo_T"] = torch.from_numpy(stereo_T)
+        inputs[("color", -1, -1)] = self.get_color(folder, int(line[2]) - 1, side, do_flip)
+        for idx in range(30):
+            inputs[("color", idx, -1)] = self.get_color(folder, int(line[2 + idx]), side, do_flip)
             
-            if batch_i == 0:
-                for key in inputs_i:
-                    inputs[key] = inputs_i[key].unsqueeze(0)
-            else:
-                for key in inputs_i:
-                    inputs[key] = torch.cat((inputs[key], inputs_i[key].unsqueeze(0)), dim=0)
+        inputs[("color", 30, -1)] = self.get_color(folder, int(line[-1]) + 1, side, do_flip)
+
+        # adjusting intrinsics to match each scale in the pyramid
+        for scale in range(self.num_scales):
+            K = self.K.copy()
+
+            K[0, :] *= self.width // (2 ** scale)
+            K[1, :] *= self.height // (2 ** scale)
+
+            inv_K = np.linalg.pinv(K)
+
+            inputs[("K", scale)] = torch.from_numpy(K)
+            inputs[("inv_K", scale)] = torch.from_numpy(inv_K)
+
+        if do_color_aug:
+            color_aug = transforms.ColorJitter.get_params(
+                self.brightness, self.contrast, self.saturation, self.hue)
+        else:
+            color_aug = (lambda x: x)
+
+        self.preprocess(inputs, color_aug)
+
+        for i in range(-1, 31):
+            del inputs[("color", i, -1)]
+            del inputs[("color_aug", i, -1)]
+
         return inputs
 
     def get_color(self, folder, frame_index, side, do_flip):

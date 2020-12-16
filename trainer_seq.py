@@ -195,7 +195,6 @@ class Trainer:
     def run_epoch(self):
         """Run a single epoch of training and validation
         """
-        self.model_lr_scheduler.step()
 
         print("Training")
         self.set_train()
@@ -207,28 +206,27 @@ class Trainer:
 
             before_op_time = time.time()
             for idx in range(30):
-                inputs_i = self.train_loader.dataset.get_frame_i(inputs, idx)
-                outputs, losses, hs1, hs2 = self.process_batch(inputs_i, hs1, hs2)
+                self.model_lr_scheduler.step()
+                outputs, losses, hs1, hs2 = self.process_batch(inputs, idx, hs1, hs2)
 
                 self.model_optimizer.zero_grad()
                 losses["loss"].backward()
                 self.model_optimizer.step()
-                self.step += 1
 
             duration = time.time() - before_op_time
 
             # log less frequently after the first 2000 steps to save time & disk space
-            early_phase = batch_idx % self.opt.log_frequency == 0 and self.step < 2000
-            late_phase = self.step % 2000 == 0
+            early_phase = batch_idx % self.opt.log_frequency == 0 and self.step < 100
+            late_phase = self.step % 100 == 0
             if early_phase or late_phase:
                 self.log_time(batch_idx, duration, losses["loss"].cpu().data)
                 if "depth_gt" in inputs:
                     self.compute_depth_losses(inputs, outputs, losses)
-                self.log("train", inputs_i, outputs, losses)
+                self.log("train", inputs, outputs, losses)
  #                  self.val()
+            self.step += 1
 
-
-    def process_batch(self, inputs, hs1, hs2):
+    def process_batch(self, inputs, frame_idx, hs1, hs2):
         """Pass a minibatch through the network and generate images and losses
         """
         for key, ipt in inputs.items():
@@ -237,7 +235,7 @@ class Trainer:
         if self.opt.pose_model_type == "shared":
             # If we are using a shared encoder for both depth and pose (as advocated
             # in monodepthv1), then all images are fed separately through the depth encoder.
-            all_color_aug = torch.cat([inputs[("color_aug", i, 0)] for i in self.opt.frame_ids])
+            all_color_aug = torch.cat([inputs[("color_aug", frame_idx + i, 0)] for i in self.opt.frame_ids])
             all_features = self.models["encoder"](all_color_aug)
             all_features = [torch.split(f, self.opt.batch_size) for f in all_features]
 
@@ -249,14 +247,14 @@ class Trainer:
         else: # default
             # Otherwise, we only feed the image with frame_id 0 through the depth encoder
             # inputs["color_aug", 0, 0]: [12, 3, 192, 640] (B, C, H, W) --> [12, 1, 3, 192, 640]
-            features, hs1 = self.models["encoder"](inputs["color_aug", 0, 0].unsqueeze(1), hs1)
+            features, hs1 = self.models["encoder"](inputs["color_aug", frame_idx, 0].unsqueeze(1), hs1)
             outputs = self.models["depth"](features)
 
         if self.opt.predictive_mask:
             outputs["predictive_mask"] = self.models["predictive_mask"](features)
 
         if self.use_pose_net:
-            pose_output, hs2 = self.predict_poses(inputs, features, hs2)
+            pose_output, hs2 = self.predict_poses(inputs, frame_idx, features, hs2)
             outputs.update(pose_output)
 
         self.generate_images_pred(inputs, outputs)
@@ -264,11 +262,11 @@ class Trainer:
 
         return outputs, losses, hs1, hs2
 
-    def predict_poses(self, inputs, features, hs2):
+    def predict_poses(self, inputs, frame_idx, features, hs2):
         """Predict poses between input frames for monocular sequences.
         """
         outputs = {}
-        if self.num_pose_frames == 2:
+        if self.num_pose_frames == 2: # default
             # In this setting, we compute the pose to each source frame via a
             # separate forward pass through the pose network.
 
@@ -276,7 +274,7 @@ class Trainer:
             if self.opt.pose_model_type == "shared":
                 pose_feats = {f_i: features[f_i] for f_i in self.opt.frame_ids}
             else:
-                pose_feats = {f_i: inputs["color_aug", f_i, 0] for f_i in self.opt.frame_ids}
+                pose_feats = {f_i: inputs["color_aug", frame_idx + f_i, 0] for f_i in self.opt.frame_ids}
 
             for f_i in self.opt.frame_ids[1:]:
                 if f_i != "s":
@@ -304,7 +302,7 @@ class Trainer:
             # Here we input all frames to the pose net (and predict all poses) together
             if self.opt.pose_model_type in ["separate_resnet", "posecnn"]:
                 pose_inputs = torch.cat(
-                    [inputs[("color_aug", i, 0)] for i in self.opt.frame_ids if i != "s"], 1)
+                    [inputs[("color_aug", frame_idx + i, 0)] for i in self.opt.frame_ids if i != "s"], 1)
 
                 if self.opt.pose_model_type == "separate_resnet":
                     pose_inputs, hs2 = [self.models["pose_encoder"](pose_inputs)]
@@ -630,7 +628,7 @@ class Trainer:
         optimizer_load_path = os.path.join(self.opt.load_weights_folder, "adam.pth")
         if os.path.isfile(optimizer_load_path):
             print("Loading Adam weights")
-            optimizer_dict = torch.load(optimizer_load_path)
-            self.model_optimizer.load_state_dict(optimizer_dict)
+#            optimizer_dict = torch.load(optimizer_load_path)
+#            self.model_optimizer.load_state_dict(optimizer_dict)
         else:
             print("Cannot find Adam weights so Adam is randomly initialized")

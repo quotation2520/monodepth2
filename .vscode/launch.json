@@ -13,9 +13,9 @@
             "args": [
                 "--model_name", "mono_model2",
                 "--load_weights_folder", "~/tmp/mono_model/models/weights_9/",
-//                "--num_workers", "1",
+                "--num_workers", "1",
                 "--num_epochs", "20"
-//                  "--eval_mono"
+//                  "--eval_mono
             ]
         }
     ]
