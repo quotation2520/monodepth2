@@ -87,6 +87,7 @@ class ResnetEncoder(nn.Module):
             self.num_ch_enc[1:] *= 4
 
         # For Resnet18
+        #self.convlstm4 = CGRU_cell(shape=(6,20), input_channels=512, filter_size=3, num_features=512)
         self.convlstm1 = ConvLSTM(64,64, (3,3), 1, True, True,  return_all_layers=False).to('cuda')
         self.convlstm2 = ConvLSTM(64,64, (3,3), 1, True, True,  return_all_layers=False).to('cuda')
         self.convlstm3 = ConvLSTM(128,128, (3,3), 1, True, True,  return_all_layers=False).to('cuda')

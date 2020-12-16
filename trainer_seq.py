@@ -66,7 +66,7 @@ class Trainer:
 
         if self.use_pose_net:
             if self.opt.pose_model_type == "separate_resnet":   # Default
-                self.models["pose_encoder"] = networks.ResnetEncoder(
+                self.models["pose_encoder"] = networks.ResnetEncoderOri(
                     self.opt.num_layers,
                     self.opt.weights_init == "pretrained",
                     num_input_images=self.num_pose_frames)
@@ -123,6 +123,12 @@ class Trainer:
         train_filenames = readlines(fpath.format("train"))
         val_filenames = readlines(fpath.format("val"))
         img_ext = '.png' if self.opt.png else '.jpg'
+
+        #train_filenames = [x for x in train_filenames if x[0:37]=='2011_09_26/2011_09_26_drive_0022_sync']
+        #val_filenames = [x for x in val_filenames if x[0:37]=='2011_09_26/2011_09_26_drive_0022_sync']
+
+        train_filenames = [x for x in train_filenames if int(x.split(' ')[1])>=len_seq]
+        val_filenames = [x for x in val_filenames if int(x.split(' ')[1])>=len_seq]
 
         num_train_samples = len(train_filenames)
         self.num_total_steps = num_train_samples // self.opt.batch_size * self.opt.num_epochs
@@ -249,7 +255,7 @@ class Trainer:
             outputs = self.models["depth"](features[0])
         else:
             # Otherwise, we only feed the image with frame_id 0 through the depth encoder
-            features = self.models["encoder"](inputs["color_seq", 0])
+            features,_ = self.models["encoder"](inputs["color_aug_seq", 0])
             outputs = self.models["depth"](features)
 
         if self.opt.predictive_mask:
@@ -286,7 +292,8 @@ class Trainer:
                         pose_inputs = [pose_feats[0], pose_feats[f_i]]
 
                     if self.opt.pose_model_type == "separate_resnet":
-                        pose_inputs = [self.models["pose_encoder"](torch.cat(pose_inputs, 1).unsqueeze(1))]
+                        #pose_inputs = [self.models["pose_encoder"](torch.cat(pose_inputs, 1).unsqueeze(1))]
+                        pose_inputs = [self.models["pose_encoder"](torch.cat(pose_inputs, 1))]
                     elif self.opt.pose_model_type == "posecnn":
                         pose_inputs = torch.cat(pose_inputs, 1)
 
