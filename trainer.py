@@ -53,7 +53,7 @@ class Trainer:
 
         ## MODEL ##
 
-        self.models["encoder"] = networks.ResnetEncoder(
+        self.models["encoder"] = networks.ResnetEncoderMulti(
             self.opt.num_layers, self.opt.weights_init == "pretrained")
         self.models["encoder"].to(self.device)
         self.parameters_to_train += list(self.models["encoder"].parameters())
@@ -65,7 +65,7 @@ class Trainer:
 
         if self.use_pose_net:
             if self.opt.pose_model_type == "separate_resnet":   # Default
-                self.models["pose_encoder"] = networks.ResnetEncoder(
+                self.models["pose_encoder"] = networks.ResnetEncoderMulti(
                     self.opt.num_layers,
                     self.opt.weights_init == "pretrained",
                     num_input_images=self.num_pose_frames)
@@ -248,7 +248,7 @@ class Trainer:
         else: # default
             # Otherwise, we only feed the image with frame_id 0 through the depth encoder
             # inputs["color_aug", 0, 0]: [12, 3, 192, 640] (B, C, H, W) --> [12, 1, 3, 192, 640]
-            features = self.models["encoder"](inputs["color_aug", 0, 0].unsqueeze(1))
+            features, _ = self.models["encoder"](inputs["color_aug", 0, 0].unsqueeze(1), None)
             outputs = self.models["depth"](features)
 
         if self.opt.predictive_mask:
@@ -285,7 +285,7 @@ class Trainer:
                         pose_inputs = [pose_feats[0], pose_feats[f_i]]
 
                     if self.opt.pose_model_type == "separate_resnet":
-                        pose_inputs = [self.models["pose_encoder"](torch.cat(pose_inputs, 1).unsqueeze(1))]
+                        pose_inputs = [self.models["pose_encoder"](torch.cat(pose_inputs, 1).unsqueeze(1), None)[0]]
                     elif self.opt.pose_model_type == "posecnn":
                         pose_inputs = torch.cat(pose_inputs, 1)
 
@@ -304,12 +304,12 @@ class Trainer:
                     [inputs[("color_aug", i, 0)] for i in self.opt.frame_ids if i != "s"], 1)
 
                 if self.opt.pose_model_type == "separate_resnet":
-                    pose_inputs = [self.models["pose_encoder"](pose_inputs)]
+                    pose_inputs = [self.models["pose_encoder"](pose_inputs, None)]
 
             elif self.opt.pose_model_type == "shared":
                 pose_inputs = [features[i] for i in self.opt.frame_ids if i != "s"]
 
-            axisangle, translation = self.models["pose"](pose_inputs)
+            axisangle, translation = self.models["pose"](pose_inputs[0])
 
             for i, f_i in enumerate(self.opt.frame_ids[1:]):
                 if f_i != "s":

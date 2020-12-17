@@ -106,6 +106,95 @@ class ResnetEncoder(nn.Module):
             output, hidden_state = self.convlstm4(x, hidden_state=self.hidden_state, seq_len=seq_number)
         else:
             output, hidden_state = self.convlstm4(x, hidden_state=hidden_state, seq_len=seq_number)
-        self.features.append(output.squeeze())
+        self.features.append(output.squeeze(0))
 
         return self.features, hidden_state.detach()
+
+
+class ResnetEncoderMulti(nn.Module):
+    """Pytorch module for a resnet encoder
+    """
+    def __init__(self, num_layers, pretrained, num_input_images=1):
+        super(ResnetEncoderMulti, self).__init__()
+
+        self.num_ch_enc = np.array([64, 64, 128, 256, 512])
+
+        resnets = {18: models.resnet18,
+                   34: models.resnet34,
+                   50: models.resnet50,
+                   101: models.resnet101,
+                   152: models.resnet152}
+
+        if num_layers not in resnets:
+            raise ValueError("{} is not a valid number of resnet layers".format(num_layers))
+
+        if num_input_images > 1:
+            self.encoder = resnet_multiimage_input(num_layers, pretrained, num_input_images)
+        else:
+            self.encoder = resnets[num_layers](pretrained)
+
+        if num_layers > 34:
+            self.num_ch_enc[1:] *= 4
+
+        # For Resnet18
+        self.convlstm1 = CGRU_cell(shape=(48, 160), input_channels=64, filter_size=3, num_features=64)
+        self.convlstm2 = CGRU_cell(shape=(24, 80), input_channels=128, filter_size=3, num_features=128)
+        self.convlstm3 = CGRU_cell(shape=(12,40), input_channels=256, filter_size=3, num_features=256)
+        self.convlstm4 = CGRU_cell(shape=(6,20), input_channels=512, filter_size=3, num_features=512)
+        self.hidden_state1= nn.Parameter(torch.zeros(1, 64, 48, 160), requires_grad=True)
+        self.hidden_state2= nn.Parameter(torch.zeros(1, 128, 24, 80), requires_grad=True)
+        self.hidden_state3= nn.Parameter(torch.zeros(1, 256, 12, 40), requires_grad=True)
+        self.hidden_state4= nn.Parameter(torch.zeros(1, 512, 6, 20), requires_grad=True)
+
+    def forward(self, input_image, hidden_state):
+        self.features = []
+        new_hs = []
+        x = (input_image - 0.45) / 0.225
+        seq_number, batch_size, input_channel, height, width = x.shape
+        x = torch.reshape(x, (-1, input_channel, height, width))
+        x = self.encoder.conv1(x)
+        x = self.encoder.bn1(x)
+        self.features.append(self.encoder.relu(x))
+        
+        # LSTM 1
+        x = self.encoder.layer1(self.encoder.maxpool(self.features[-1]))
+        x = torch.reshape(x, (seq_number, batch_size, x.size(1), x.size(2), x.size(3)))
+        if hidden_state is None:
+            x, hs = self.convlstm1(x, hidden_state=self.hidden_state1, seq_len=seq_number)
+        else:
+            x, hs = self.convlstm1(x, hidden_state=hidden_state[0], seq_len=seq_number)
+        self.features.append(x.squeeze())
+        new_hs.append(hs.detach())
+
+        # LSTM 2
+        x = self.encoder.layer2(self.features[-1])
+        x = torch.reshape(x, (seq_number, batch_size, x.size(1), x.size(2), x.size(3)))
+        if hidden_state is None:
+            x, hs = self.convlstm2(x, hidden_state=self.hidden_state2, seq_len=seq_number)
+        else:
+            x, hs = self.convlstm2(x, hidden_state=hidden_state[1], seq_len=seq_number)
+        self.features.append(x.squeeze())
+        new_hs.append(hs.detach())
+
+        # LSTM 3
+        x = self.encoder.layer3(self.features[-1])
+        x = torch.reshape(x, (seq_number, batch_size, x.size(1), x.size(2), x.size(3)))
+        if hidden_state is None:
+            x, hs = self.convlstm3(x, hidden_state=self.hidden_state3, seq_len=seq_number)
+        else:
+            x, hs = self.convlstm3(x, hidden_state=hidden_state[2], seq_len=seq_number)
+        self.features.append(x.squeeze())
+        new_hs.append(hs.detach())
+
+        # LSTM 4
+        x = self.encoder.layer4(self.features[-1])
+        x = torch.reshape(x, (seq_number, batch_size, x.size(1), x.size(2), x.size(3)))
+        if hidden_state is None:
+            x, hs = self.convlstm4(x, hidden_state=self.hidden_state4, seq_len=seq_number)
+        else:
+            x, hs = self.convlstm4(x, hidden_state=hidden_state[3], seq_len=seq_number)
+        self.features.append(x.squeeze())
+        new_hs.append(hs.detach())
+
+        return self.features, new_hs
+
