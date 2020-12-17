@@ -1,1 +1,1 @@
-from .kitti_dataset_seq import KITTIRAWDataset, KITTIOdomDataset, KITTIDepthDataset
+from .kitti_dataset_test import KITTIRAWDataset, KITTIOdomDataset, KITTIDepthDataset
